@@ -21,11 +21,11 @@ import android.widget.TextView;
 
 import java.util.List;
 
-/** Pantalla de ayuda: activar el teclado, ver la dirección para el iPhone y probar. */
+/** Pantalla de ayuda: elegir cómo escribir en la tablet, ver la dirección para el iPhone y probar. */
 public class MainActivity extends Activity {
 
     private final Handler main = new Handler(Looper.getMainLooper());
-    private TextView address;
+    private TextView status;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,16 +39,28 @@ public class MainActivity extends Activity {
         scroll.addView(root);
 
         root.addView(label("Teclado remoto", 28, true));
-        root.addView(label("Escribe en esta tablet desde el iPhone, por Wi-Fi.", 16, false));
+        root.addView(label("Escribe en esta tablet desde el iPhone, por Wi-Fi. Hay dos formas de "
+                + "conectarlo a la tablet; con una basta.", 16, false));
 
-        root.addView(label("1. Activar el teclado", 18, true));
-        root.addView(label("Enciende el interruptor de «Teclado remoto» en la lista que se abre.", 15, false));
+        root.addView(label("Forma A: sin cambiar de teclado", 20, true));
+        root.addView(label("Sigues usando el teclado Samsung. La app escribe en el campo de texto "
+                + "que esté activo. Se enciende en Accesibilidad: Aplicaciones instaladas → "
+                + "Teclado remoto → activar.", 15, false));
+        root.addView(button("Abrir ajustes de accesibilidad", v ->
+                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))));
+        root.addView(label("Si el interruptor sale gris o dice «Configuración restringida», toca el "
+                + "botón de abajo, luego los tres puntos de arriba a la derecha → «Permitir "
+                + "configuración restringida», y vuelve a intentar.", 14, false));
+        root.addView(button("Abrir información de la app", v -> startActivity(new Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:" + getPackageName())))));
+
+        root.addView(label("Forma B: como teclado", 20, true));
+        root.addView(label("Se activa el teclado «Teclado remoto» y se elige como teclado actual. "
+                + "Para volver al de siempre, usa el botón «Cambiar de teclado» de la franja de abajo.",
+                15, false));
         root.addView(button("Abrir ajustes de teclados", v ->
                 startActivity(new Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))));
-
-        root.addView(label("2. Elegirlo como teclado actual", 18, true));
-        root.addView(label("Sin este paso la tablet no recibe nada. Para volver a tu teclado de siempre, "
-                + "usa el botón «Cambiar de teclado» que aparece en la parte de abajo.", 15, false));
         root.addView(button("Elegir teclado", v -> {
             InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
             if (imm != null) {
@@ -56,13 +68,14 @@ public class MainActivity extends Activity {
             }
         }));
 
-        root.addView(label("3. Abrir en el iPhone", 18, true));
-        address = label("", 16, false);
-        address.setTextIsSelectable(true);
-        root.addView(address);
-        root.addView(label("El servidor queda encendido mientras veas el aviso «Teclado remoto encendido» "
-                + "arriba en la tablet. La tablet y el iPhone deben estar en la misma red. Si el Wi-Fi "
-                + "no deja que se vean entre sí, conecta la tablet al punto de acceso del iPhone.", 14, false));
+        root.addView(label("Estado y dirección para el iPhone", 20, true));
+        status = label("", 16, false);
+        status.setTextIsSelectable(true);
+        root.addView(status);
+        root.addView(label("El servidor queda encendido mientras veas el aviso «Teclado remoto "
+                + "encendido» arriba en la tablet. La tablet y el iPhone deben estar en la misma red. "
+                + "Si el Wi-Fi no deja que se vean entre sí, conecta la tablet al punto de acceso "
+                + "del iPhone.", 14, false));
         root.addView(button("Actualizar", v -> refresh()));
         root.addView(button("Probar la página en esta tablet", v -> {
             Uri uri = Uri.parse("http://127.0.0.1:" + Config.port(this) + "/?k=" + Config.token(this));
@@ -73,7 +86,7 @@ public class MainActivity extends Activity {
             refresh();
         }));
 
-        root.addView(label("4. Probar", 18, true));
+        root.addView(label("Probar", 20, true));
         EditText test = new EditText(this);
         test.setHint("Toca aquí y escribe desde el iPhone");
         root.addView(test);
@@ -103,6 +116,17 @@ public class MainActivity extends Activity {
         }
     }
 
+    private boolean keyboardChosen() {
+        String ime = Settings.Secure.getString(getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
+        return ime != null && ime.startsWith(getPackageName() + "/");
+    }
+
+    private boolean accessibilityOn() {
+        String list = Settings.Secure.getString(
+                getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+        return list != null && list.contains(getPackageName() + "/");
+    }
+
     private void refresh() {
         final int port = Config.port(this);
         final List<String> ips = Config.addresses();
@@ -114,16 +138,18 @@ public class MainActivity extends Activity {
                 urls.append(Config.url(this, ip)).append("\n");
             }
         }
+        final String modes = "Forma A (accesibilidad): " + (accessibilityOn() ? "activada" : "apagada")
+                + "\nForma B (teclado elegido): " + (keyboardChosen() ? "sí" : "no");
         final String list = urls.toString().trim();
-        address.setText("Comprobando el servidor…\n\n" + list);
+        status.setText("Comprobando el servidor…\n" + modes + "\n\n" + list);
 
         new Thread(() -> {
             final boolean up = port > 0 && Config.serverUp(port);
-            runOnUiThread(() -> address.setText(
-                    (up ? "Servidor encendido (puerto " + port + ").\n\n"
+            runOnUiThread(() -> status.setText(
+                    (up ? "Servidor encendido (puerto " + port + ")."
                         : "El servidor no está encendido. Toca «Actualizar»; si sigue igual, "
-                            + "revisa que los avisos de la app estén permitidos.\n\n")
-                            + list));
+                            + "revisa que los avisos de la app estén permitidos.")
+                            + "\n" + modes + "\n\n" + list));
         }).start();
     }
 

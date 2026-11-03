@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">Teclado remoto</string>
     <string name="ime_name">Teclado remoto</string>
+    <string name="accessibility_description">Escribe en el campo de texto que esté activo lo que llega desde el iPhone de la misma red. Solo toca ese campo: no lee ni guarda nada más de la pantalla.</string>
 </resources>

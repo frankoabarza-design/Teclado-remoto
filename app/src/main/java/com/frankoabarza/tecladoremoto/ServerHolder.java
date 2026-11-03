@@ -9,26 +9,48 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
- * El único servidor de la app. Vive aparte del teclado, para que siga encendido aunque
- * se cambie a otro teclado un momento. El teclado solo se registra aquí mientras es el elegido.
+ * El único servidor de la app. Vive aparte del teclado y de la accesibilidad, para que siga
+ * encendido aunque se cambie de teclado un momento. Quien sepa escribir en la tablet
+ * (teclado o accesibilidad) se registra aquí mientras esté activo.
  */
 final class ServerHolder {
 
     private static RemoteServer server;
-    private static volatile RemoteKeyboardService keyboard;
+    private static volatile Injector keyboard;
+    private static volatile Injector accessibility;
     private static String cachedPage;
 
     private ServerHolder() {
     }
 
-    static void setKeyboard(RemoteKeyboardService k) {
+    static void setKeyboard(Injector k) {
         keyboard = k;
     }
 
-    static void clearKeyboard(RemoteKeyboardService k) {
+    static void clearKeyboard(Injector k) {
         if (keyboard == k) {
             keyboard = null;
         }
+    }
+
+    static void setAccessibility(Injector a) {
+        accessibility = a;
+    }
+
+    static void clearAccessibility(Injector a) {
+        if (accessibility == a) {
+            accessibility = null;
+        }
+    }
+
+    /** El teclado si tiene un campo activo; si no, accesibilidad; si no, lo que haya. */
+    private static Injector pick() {
+        Injector k = keyboard;
+        if (k != null && k.isFieldActive()) {
+            return k;
+        }
+        Injector a = accessibility;
+        return a != null ? a : k;
     }
 
     /** Enciende el servidor si no lo está. Devuelve el puerto, o 0 si no se pudo abrir. */
@@ -50,19 +72,19 @@ final class ServerHolder {
 
             @Override
             public boolean keyboardActive() {
-                return keyboard != null;
+                return keyboard != null || accessibility != null;
             }
 
             @Override
             public boolean fieldActive() {
-                RemoteKeyboardService k = keyboard;
-                return k != null && k.isFieldActive();
+                Injector i = pick();
+                return i != null && i.isFieldActive();
             }
 
             @Override
             public String handle(Map<String, String> params) {
-                RemoteKeyboardService k = keyboard;
-                return k == null ? "no_keyboard" : k.handleCommand(params);
+                Injector i = pick();
+                return i == null ? "no_keyboard" : i.handleCommand(params);
             }
         });
         try {

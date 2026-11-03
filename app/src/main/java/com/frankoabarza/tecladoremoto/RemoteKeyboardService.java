@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit;
  * Teclado de Android que no tiene teclas: escribe en el campo de texto activo lo que le
  * llega desde la página del iPhone. El servidor que recibe esas órdenes está en ServerHolder.
  */
-public class RemoteKeyboardService extends InputMethodService {
+public class RemoteKeyboardService extends InputMethodService implements Injector {
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private volatile boolean fieldActive;
@@ -33,8 +33,12 @@ public class RemoteKeyboardService extends InputMethodService {
     @Override
     public void onCreate() {
         super.onCreate();
-        ServerHolder.setKeyboard(this);
-        ServerHolder.ensureStarted(this); // por si el servicio con aviso fijo no está activo
+        try {
+            ServerHolder.setKeyboard(this);
+            ServerHolder.ensureStarted(this); // por si el servicio con aviso fijo no está activo
+        } catch (RuntimeException e) {
+            // el teclado debe poder abrirse aunque el servidor falle
+        }
     }
 
     @Override
@@ -130,11 +134,13 @@ public class RemoteKeyboardService extends InputMethodService {
 
     // ---- Llamadas desde ServerHolder (hilos del servidor) ----
 
-    boolean isFieldActive() {
+    @Override
+    public boolean isFieldActive() {
         return fieldActive;
     }
 
-    String handleCommand(final Map<String, String> params) {
+    @Override
+    public String handleCommand(final Map<String, String> params) {
         FutureTask<String> task = new FutureTask<>(() -> apply(params));
         main.post(task);
         try {
