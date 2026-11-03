@@ -8,10 +8,10 @@ android {
 
     defaultConfig {
         applicationId 'com.frankoabarza.tecladoremoto'
-        minSdk 24
+        minSdk 26
         targetSdk 34
-        versionCode 1
-        versionName '1.0'
+        versionCode 2
+        versionName '1.1'
     }
 
     // Llave fija incluida en el repositorio: así cada APK nuevo se instala encima del anterior

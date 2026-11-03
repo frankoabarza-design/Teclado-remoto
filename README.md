@@ -30,7 +30,14 @@ Seleccionar todo, Copiar, Cortar, Pegar y Deshacer. Estos cuatro últimos usan e
 de la tablet, no el del iPhone.
 
 Para volver al teclado normal de la tablet, toca **Cambiar de teclado** en la franja de abajo.
-Mientras otro teclado esté elegido, el servidor está apagado.
+El servidor sigue encendido mientras veas el aviso «Teclado remoto encendido» en la tablet,
+aunque estés usando otro teclado. Se apaga con el botón **Apagar** del aviso, y vuelve a
+encenderse al abrir la app. Para escribir, «Teclado remoto» tiene que ser el teclado elegido.
+
+Si algo no conecta, la página del iPhone dice qué falta (elegir el teclado, tocar un campo de
+texto, código incorrecto). En la app de la tablet, el botón **Probar la página en esta tablet**
+abre la misma página en el navegador de la tablet, sin escribir ninguna dirección: sirve para
+saber si el servidor funciona aparte de la red.
 
 ## Límites
 

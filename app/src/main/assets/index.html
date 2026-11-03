@@ -115,9 +115,12 @@ function diff(prev, cur) {
     statusEl.textContent = text;
   }
 
-  function handleStatus(code) {
+  var NEED_KEYBOARD = 'En la tablet, elige «Teclado remoto» como teclado actual';
+  var NEED_FIELD = 'Toca un campo de texto en la tablet';
+
+  function handleStatus(code, error) {
     if (code === 200) setStatus('ok', 'Listo: lo que escribas aparece en la tablet');
-    else if (code === 409) setStatus('', 'Toca un campo de texto en la tablet');
+    else if (code === 409) setStatus('', error === 'no_keyboard' ? NEED_KEYBOARD : NEED_FIELD);
     else if (code === 401) { blocked = true; setStatus('bad', 'Código incorrecto. Abre la dirección completa que sale en la tablet'); }
     else if (code === 429) setStatus('bad', 'Demasiados intentos. Espera un minuto');
     else setStatus('bad', 'Error ' + code);
@@ -129,8 +132,12 @@ function diff(prev, cur) {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams(data).toString()
-    }).then(function (r) { handleStatus(r.status); })
-      .catch(function () { setStatus('bad', 'Sin conexión con la tablet'); });
+    }).then(function (r) {
+      if (r.status === 409) {
+        return r.json().then(function (j) { handleStatus(409, j.error); });
+      }
+      handleStatus(r.status);
+    }).catch(function () { setStatus('bad', 'Sin conexión con la tablet'); });
   }
 
   // Las órdenes salen una tras otra para que lleguen en el mismo orden en que se tocaron.
@@ -197,8 +204,9 @@ function diff(prev, cur) {
     fetch('/api/ping?k=' + encodeURIComponent(K)).then(function (r) {
       if (r.status !== 200) { handleStatus(r.status); return; }
       return r.json().then(function (j) {
-        if (j.field) setStatus('ok', 'Listo: lo que escribas aparece en la tablet');
-        else setStatus('', 'Toca un campo de texto en la tablet');
+        if (!j.keyboard) setStatus('', NEED_KEYBOARD);
+        else if (!j.field) setStatus('', NEED_FIELD);
+        else setStatus('ok', 'Listo: lo que escribas aparece en la tablet');
       });
     }).catch(function () { setStatus('bad', 'Sin conexión con la tablet'); });
   }

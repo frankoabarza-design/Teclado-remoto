@@ -15,45 +15,31 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Teclado de Android que no tiene teclas: abre un servidor en la red local y escribe
- * en el campo de texto activo lo que le llega desde la página del iPhone.
+ * Teclado de Android que no tiene teclas: escribe en el campo de texto activo lo que le
+ * llega desde la página del iPhone. El servidor que recibe esas órdenes está en ServerHolder.
  */
-public class RemoteKeyboardService extends InputMethodService implements RemoteServer.Delegate {
+public class RemoteKeyboardService extends InputMethodService {
 
     private final Handler main = new Handler(Looper.getMainLooper());
-    private RemoteServer server;
     private volatile boolean fieldActive;
     private TextView info;
-    private String cachedPage;
 
     @Override
     public void onCreate() {
         super.onCreate();
-        server = new RemoteServer(this);
-        try {
-            Config.setPort(this, server.start(Config.DEFAULT_PORT));
-        } catch (IOException e) {
-            Config.setPort(this, 0);
-        }
+        ServerHolder.setKeyboard(this);
+        ServerHolder.ensureStarted(this); // por si el servicio con aviso fijo no está activo
     }
 
     @Override
     public void onDestroy() {
-        if (server != null) {
-            server.stop();
-            server = null;
-        }
-        Config.setPort(this, 0);
+        ServerHolder.clearKeyboard(this);
         super.onDestroy();
     }
 
@@ -142,38 +128,13 @@ public class RemoteKeyboardService extends InputMethodService implements RemoteS
         super.onFinishInput();
     }
 
-    // ---- RemoteServer.Delegate (se llama desde hilos del servidor) ----
+    // ---- Llamadas desde ServerHolder (hilos del servidor) ----
 
-    @Override
-    public String token() {
-        return Config.token(this);
-    }
-
-    @Override
-    public boolean fieldActive() {
+    boolean isFieldActive() {
         return fieldActive;
     }
 
-    @Override
-    public String page() {
-        if (cachedPage == null) {
-            try (InputStream in = getAssets().open("index.html")) {
-                ByteArrayOutputStream buf = new ByteArrayOutputStream();
-                byte[] chunk = new byte[4096];
-                int n;
-                while ((n = in.read(chunk)) > 0) {
-                    buf.write(chunk, 0, n);
-                }
-                cachedPage = new String(buf.toByteArray(), StandardCharsets.UTF_8);
-            } catch (IOException e) {
-                return "<h1>No se pudo cargar la página</h1>";
-            }
-        }
-        return cachedPage;
-    }
-
-    @Override
-    public String handle(final Map<String, String> params) {
+    String handleCommand(final Map<String, String> params) {
         FutureTask<String> task = new FutureTask<>(() -> apply(params));
         main.post(task);
         try {

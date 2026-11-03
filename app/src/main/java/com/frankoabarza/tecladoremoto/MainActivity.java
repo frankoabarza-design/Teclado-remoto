@@ -1,8 +1,14 @@
 package com.frankoabarza.tecladoremoto;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.util.TypedValue;
 import android.view.View;
@@ -18,6 +24,7 @@ import java.util.List;
 /** Pantalla de ayuda: activar el teclado, ver la dirección para el iPhone y probar. */
 public class MainActivity extends Activity {
 
+    private final Handler main = new Handler(Looper.getMainLooper());
     private TextView address;
 
     @Override
@@ -53,8 +60,14 @@ public class MainActivity extends Activity {
         address = label("", 16, false);
         address.setTextIsSelectable(true);
         root.addView(address);
-        root.addView(label("La tablet y el iPhone deben estar en la misma red. Si el Wi-Fi no deja que "
-                + "se vean entre sí, conecta la tablet al punto de acceso del iPhone.", 14, false));
+        root.addView(label("El servidor queda encendido mientras veas el aviso «Teclado remoto encendido» "
+                + "arriba en la tablet. La tablet y el iPhone deben estar en la misma red. Si el Wi-Fi "
+                + "no deja que se vean entre sí, conecta la tablet al punto de acceso del iPhone.", 14, false));
+        root.addView(button("Actualizar", v -> refresh()));
+        root.addView(button("Probar la página en esta tablet", v -> {
+            Uri uri = Uri.parse("http://127.0.0.1:" + Config.port(this) + "/?k=" + Config.token(this));
+            startActivity(new Intent(Intent.ACTION_VIEW, uri));
+        }));
         root.addView(button("Cambiar el código", v -> {
             Config.renewToken(this);
             refresh();
@@ -66,36 +79,51 @@ public class MainActivity extends Activity {
         root.addView(test);
 
         setContentView(scroll);
+
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1);
+        }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        startServer();
         refresh();
+        main.postDelayed(this::refresh, 1200); // el servidor tarda un instante en abrir el puerto
+    }
+
+    private void startServer() {
+        try {
+            startForegroundService(new Intent(this, ServerService.class));
+        } catch (RuntimeException e) {
+            ServerHolder.ensureStarted(this); // sin aviso fijo, pero al menos encendido
+        }
     }
 
     private void refresh() {
         final int port = Config.port(this);
         final List<String> ips = Config.addresses();
-        final StringBuilder sb = new StringBuilder();
+        final StringBuilder urls = new StringBuilder();
         if (ips.isEmpty()) {
-            sb.append("No encuentro la red. Conecta la tablet a un Wi-Fi.");
+            urls.append("No encuentro la red. Conecta la tablet a un Wi-Fi.");
         } else {
             for (String ip : ips) {
-                sb.append(Config.url(this, ip)).append("\n");
+                urls.append(Config.url(this, ip)).append("\n");
             }
         }
-        address.setText(sb.toString().trim());
+        final String list = urls.toString().trim();
+        address.setText("Comprobando el servidor…\n\n" + list);
 
         new Thread(() -> {
             final boolean up = port > 0 && Config.serverUp(port);
-            runOnUiThread(() -> {
-                if (!up) {
-                    address.setText("El servidor todavía no está encendido. Haz el paso 2 y toca un "
-                            + "campo de texto (por ejemplo, el de la prueba de abajo).\n\n"
-                            + address.getText());
-                }
-            });
+            runOnUiThread(() -> address.setText(
+                    (up ? "Servidor encendido (puerto " + port + ").\n\n"
+                        : "El servidor no está encendido. Toca «Actualizar»; si sigue igual, "
+                            + "revisa que los avisos de la app estén permitidos.\n\n")
+                            + list));
         }).start();
     }
 

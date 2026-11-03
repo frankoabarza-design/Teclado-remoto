@@ -35,10 +35,13 @@ public class RemoteServer {
         /** HTML de la página de control. */
         String page();
 
+        /** true si «Teclado remoto» es el teclado elegido en la tablet. */
+        boolean keyboardActive();
+
         /** true si hay un campo de texto listo para recibir. */
         boolean fieldActive();
 
-        /** Ejecuta la orden. Devuelve "ok", "no_field" u otro texto de error. */
+        /** Ejecuta la orden. Devuelve "ok", "no_keyboard", "no_field" u otro texto de error. */
         String handle(Map<String, String> params);
     }
 
@@ -86,6 +89,10 @@ public class RemoteServer {
         acceptor.setDaemon(true);
         acceptor.start();
         return server.getLocalPort();
+    }
+
+    public synchronized boolean isRunning() {
+        return running && server != null && !server.isClosed();
     }
 
     public synchronized void stop() {
@@ -197,7 +204,8 @@ public class RemoteServer {
                 respondAuthError(out, auth);
                 return;
             }
-            respond(out, 200, "application/json", "{\"ok\":true,\"field\":" + delegate.fieldActive() + "}");
+            respond(out, 200, "application/json", "{\"ok\":true,\"keyboard\":" + delegate.keyboardActive()
+                    + ",\"field\":" + delegate.fieldActive() + "}");
             return;
         }
         if ("POST".equals(method) && path.equals("/api/send")) {
@@ -209,8 +217,8 @@ public class RemoteServer {
             String result = delegate.handle(params);
             if ("ok".equals(result)) {
                 respond(out, 200, "application/json", "{\"ok\":true}");
-            } else if ("no_field".equals(result)) {
-                respond(out, 409, "application/json", "{\"ok\":false,\"error\":\"no_field\"}");
+            } else if ("no_field".equals(result) || "no_keyboard".equals(result)) {
+                respond(out, 409, "application/json", "{\"ok\":false,\"error\":\"" + result + "\"}");
             } else {
                 respond(out, 400, "application/json", "{\"ok\":false,\"error\":\"" + result + "\"}");
             }
