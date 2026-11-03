@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Teclado">
+<title>Teclado remoto</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f2f3f5; --fg: #1b1d21; --card: #ffffff; --line: #cfd3da; --key: #e3e6eb;
+    --ok: #1e8e3e; --wait: #b06000; --bad: #c5221f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #15171a; --fg: #eceef2; --card: #23262c; --line: #3a3e46; --key: #343842;
+            --ok: #81c995; --wait: #fdd663; --bad: #f28b82; }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 16px/1.4 -apple-system, system-ui, sans-serif;
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) 12px env(safe-area-inset-bottom);
+  }
+  header { display: flex; align-items: center; gap: 10px; padding: 12px 4px 8px; }
+  #dot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--wait); }
+  #dot.ok { background: var(--ok); }
+  #dot.bad { background: var(--bad); }
+  #status { font-size: 15px; }
+  .hint { margin: 0 4px 8px; font-size: 13px; opacity: .7; }
+  #ta {
+    flex: 1; min-height: 80px; width: 100%; resize: none;
+    font-size: 18px; /* 16 px o más evita el zoom de Safari */
+    padding: 12px; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--card); color: var(--fg);
+  }
+  .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; padding: 10px 0 12px; }
+  button {
+    min-height: 46px; border-radius: 10px; border: 0; background: var(--key); color: var(--fg);
+    font: inherit; font-size: 15px; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+  }
+  button:active { filter: brightness(.85); }
+  .w2 { grid-column: span 2; }
+  .w3 { grid-column: span 3; }
+</style>
+</head>
+<body>
+<header>
+  <span id="dot"></span>
+  <span id="status">Conectando con la tablet…</span>
+</header>
+<p class="hint">Toca el recuadro y escribe con el teclado del iPhone. Lo que escribas sale en la tablet.</p>
+<textarea id="ta" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false"
+          aria-label="Escribe aquí"></textarea>
+<div class="grid">
+  <button data-key="ESC">Esc</button>
+  <button data-key="TAB">Tab</button>
+  <button data-key="HOME">Inicio</button>
+  <button data-key="END">Fin</button>
+  <button data-key="DELETE" data-repeat>Supr</button>
+  <button data-key="BACKSPACE" data-repeat>⌫</button>
+
+  <button data-key="LEFT" data-repeat>←</button>
+  <button data-key="UP" data-repeat>↑</button>
+  <button data-key="DOWN" data-repeat>↓</button>
+  <button data-key="RIGHT" data-repeat>→</button>
+  <button data-key="ENTER" class="w2">Enter</button>
+
+  <button data-action="selectAll" class="w2">Seleccionar todo</button>
+  <button data-action="copy">Copiar</button>
+  <button data-action="cut">Cortar</button>
+  <button data-action="paste">Pegar</button>
+  <button data-action="undo">Deshacer</button>
+</div>
+
+<script id="pure">
+// Funciones sin acceso a la página: se prueban aparte con Node.
+function cpLen(s) { return Array.from(s).length; }
+
+// Compara lo que había (prev) con lo que hay ahora (cur) y dice cuántos caracteres
+// borrar en la tablet y qué texto escribir después. Se asume que la tablet tiene el
+// mismo texto que prev y el cursor al final.
+// El primer carácter de prev es un centinela invisible: no existe en la tablet, salvo
+// cuando es lo único que hay. En ese caso, borrarlo equivale a una tecla de borrar.
+function diff(prev, cur) {
+  var max = Math.min(prev.length, cur.length), p = 0;
+  while (p < max && prev.charCodeAt(p) === cur.charCodeAt(p)) p++;
+  if (p > 0) {
+    var c = prev.charCodeAt(p - 1);
+    if (c >= 0xD800 && c <= 0xDBFF) p--; // no partir un emoji a la mitad
+  }
+  var back = cpLen(prev.slice(p));
+  if (p === 0 && prev.length > 1) back -= 1; // el centinela no cuenta si hay texto después
+  return { back: back, text: cur.slice(p) };
+}
+</script>
+<script>
+(function () {
+  var K = new URLSearchParams(location.search).get('k') || '';
+  var SENT = '​';
+  var ta = document.getElementById('ta');
+  var dot = document.getElementById('dot');
+  var statusEl = document.getElementById('status');
+  var last = SENT;
+  var composing = false;
+  var chain = Promise.resolve();
+  var blocked = false;
+
+  ta.value = SENT;
+
+  function setStatus(kind, text) {
+    dot.className = kind;
+    statusEl.textContent = text;
+  }
+
+  function handleStatus(code) {
+    if (code === 200) setStatus('ok', 'Listo: lo que escribas aparece en la tablet');
+    else if (code === 409) setStatus('', 'Toca un campo de texto en la tablet');
+    else if (code === 401) { blocked = true; setStatus('bad', 'Código incorrecto. Abre la dirección completa que sale en la tablet'); }
+    else if (code === 429) setStatus('bad', 'Demasiados intentos. Espera un minuto');
+    else setStatus('bad', 'Error ' + code);
+  }
+
+  function post(data) {
+    data.k = K;
+    return fetch('/api/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(data).toString()
+    }).then(function (r) { handleStatus(r.status); })
+      .catch(function () { setStatus('bad', 'Sin conexión con la tablet'); });
+  }
+
+  // Las órdenes salen una tras otra para que lleguen en el mismo orden en que se tocaron.
+  function send(data) { chain = chain.then(function () { return post(data); }); }
+
+  function sync() {
+    var cur = ta.value;
+    var d = diff(last, cur);
+    if (d.back || d.text) send({ back: d.back, text: d.text });
+    if (cur.charAt(0) !== SENT) cur = SENT + cur;
+    if (cur.length > 80) {
+      var tail = cur.slice(-20);
+      var c = tail.charCodeAt(0);
+      if (c >= 0xDC00 && c <= 0xDFFF) tail = tail.slice(1);
+      cur = SENT + tail;
+    }
+    if (cur !== ta.value) ta.value = cur;
+    last = cur;
+  }
+
+  function caretToEnd() { var n = ta.value.length; ta.setSelectionRange(n, n); }
+
+  ta.addEventListener('input', function () { if (!composing) sync(); });
+  ta.addEventListener('compositionstart', function () { composing = true; });
+  ta.addEventListener('compositionend', function () { composing = false; sync(); });
+  ta.addEventListener('focus', function () { setTimeout(caretToEnd, 0); });
+  ta.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); send({ key: 'ENTER' }); }
+  });
+  ta.addEventListener('beforeinput', function (e) {
+    if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') {
+      e.preventDefault();
+      send({ key: 'ENTER' });
+    }
+  });
+
+  function fire(b) {
+    if (b.dataset.key) send({ key: b.dataset.key });
+    else send({ action: b.dataset.action });
+  }
+
+  // Los botones usan touchstart con preventDefault para que el teclado del iPhone no se cierre.
+  document.querySelectorAll('button').forEach(function (b) {
+    var delay = null, timer = null, touched = false;
+    function stop() { clearTimeout(delay); clearInterval(timer); delay = timer = null; }
+    function start(e) {
+      e.preventDefault();
+      stop();
+      fire(b);
+      if (b.hasAttribute('data-repeat')) {
+        delay = setTimeout(function () { timer = setInterval(function () { fire(b); }, 70); }, 400);
+      }
+    }
+    b.addEventListener('touchstart', function (e) { touched = true; start(e); }, { passive: false });
+    b.addEventListener('touchend', stop);
+    b.addEventListener('touchcancel', stop);
+    b.addEventListener('mousedown', function (e) { if (!touched) start(e); });
+    b.addEventListener('mouseup', stop);
+    b.addEventListener('mouseleave', stop);
+  });
+
+  function ping() {
+    if (blocked) return;
+    fetch('/api/ping?k=' + encodeURIComponent(K)).then(function (r) {
+      if (r.status !== 200) { handleStatus(r.status); return; }
+      return r.json().then(function (j) {
+        if (j.field) setStatus('ok', 'Listo: lo que escribas aparece en la tablet');
+        else setStatus('', 'Toca un campo de texto en la tablet');
+      });
+    }).catch(function () { setStatus('bad', 'Sin conexión con la tablet'); });
+  }
+
+  if (!K) {
+    blocked = true;
+    setStatus('bad', 'Falta el código. Abre la dirección completa que sale en la tablet');
+  } else {
+    setInterval(ping, 2500);
+    ping();
+  }
+})();
+</script>
+</body>
+</html>
